@@ -1,0 +1,167 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: X-Ray demo resources
+Resources:
+  Vpc:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: '10.0.0.0/16'
+  PublicSubnetA:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: 'eu-west-1a'
+      CidrBlock: '10.0.1.0/24'
+      VpcId:
+        Ref: Vpc
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+  VpcGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      InternetGatewayId:
+        Ref: InternetGateway
+      VpcId:
+        Ref: Vpc
+  PublicRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId:
+        Ref: Vpc
+  PublicDefaultRoute:
+    DependsOn: VpcGatewayAttachment
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: InternetGateway
+  PublicRouteAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId:
+        Ref: PublicRouteTable
+      SubnetId:
+        Ref: PublicSubnetA
+  NatGatewayEIP:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: vpc
+  NatGateway:
+    DependsOn: VpcGatewayAttachment
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - NatGatewayEIP
+        - AllocationId
+      SubnetId:
+        Ref: PublicSubnetA
+  PrivateRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId:
+        Ref: Vpc
+  PrivateDefaultRoute:
+    DependsOn: VpcGatewayAttachment
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+        Ref: NatGateway
+  PrivateSubnetA:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: 'eu-west-1a'
+      CidrBlock: '10.0.4.0/24'
+      VpcId:
+        Ref: Vpc
+  PrivateSubnetB:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: 'eu-west-1b'
+      CidrBlock: '10.0.5.0/24'
+      VpcId:
+        Ref: Vpc
+  PrivateSubnetC:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZone: 'eu-west-1c'
+      CidrBlock: '10.0.6.0/24'
+      VpcId:
+        Ref: Vpc
+  PrivateSubnetRouteTableAssociationA:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId:
+        Ref: PrivateRouteTable
+      SubnetId:
+        Ref: PrivateSubnetA
+  PrivateSubnetRouteTableAssociationB:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId:
+        Ref: PrivateRouteTable
+      SubnetId:
+        Ref: PrivateSubnetB
+  PrivateSubnetRouteTableAssociationC:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId:
+        Ref: PrivateRouteTable
+      SubnetId:
+        Ref: PrivateSubnetC
+  FunctionSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: Security group for Lambda functions
+      VpcId:
+        Ref: Vpc
+
+  ConversionsQueue:
+    Type: "AWS::SQS::Queue"
+
+  MessagesBucket:
+    Type: "AWS::S3::Bucket"
+
+Outputs:
+  PrivateSubnetIdA:
+    Value:
+      Ref: PrivateSubnetA
+    Export:
+      Name: AwsXRaySubnetIdA
+  PrivateSubnetIdB:
+    Value:
+      Ref: PrivateSubnetB
+    Export:
+      Name: AwsXRaySubnetIdB
+  PrivateSubnetIdC:
+    Value:
+      Ref: PrivateSubnetC
+    Export:
+      Name: AwsXRaySubnetIdC
+  FunctionSecurityGroupOutput:
+    Value:
+      Ref: FunctionSecurityGroup
+    Export:
+      Name: AwsXRayFunctionSecurityGroup
+  ConversionsQueueUrlOutput:
+    Value:
+      Ref: ConversionsQueue
+    Export:
+      Name: AwsXRayConversionsQueueUrl
+  ConversionsQueueArnOutput:
+    Value: !GetAtt ConversionsQueue.Arn
+    Export:
+      Name: AwsXRayConversionsQueueArn
+  S3BucketNameOutput:
+    Value:
+      Ref: MessagesBucket
+    Export:
+      Name: AwsXRayS3BucketName
+  S3BucketArnOutput:
+    Value:
+      Fn::GetAtt: MessagesBucket.Arn
+    Export:
+      Name: AwsXRayS3BucketArn

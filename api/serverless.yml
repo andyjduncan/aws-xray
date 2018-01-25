@@ -1,0 +1,194 @@
+service: aws-xray-demo
+
+plugins:
+  - aws-xray
+
+provider:
+  name: aws
+  runtime: nodejs6.10
+  region: eu-west-1
+  role:
+  vpc:
+    subnetIds:
+      - 'Fn::ImportValue': AwsXRaySubnetIdA
+      - 'Fn::ImportValue': AwsXRaySubnetIdB
+      - 'Fn::ImportValue': AwsXRaySubnetIdC
+  versionFunctions: false
+
+functions:
+  convert:
+    handler: handler.convert
+    role: RecevingFunctionIamRole
+    events:
+      - http:
+          path: convert
+          method: post
+    environment:
+      CONVERSIONS_QUEUE:
+        'Fn::ImportValue': AwsXRayConversionsQueueUrl
+    tracing:
+      mode: Active
+
+  conversionOrchestrator:
+    handler: handler.orchestrate
+    role: OrchestratorFunctionIamRole
+    events:
+      - schedule: rate(1 minute)
+    environment:
+      CONVERSIONS_QUEUE:
+        'Fn::ImportValue': AwsXRayConversionsQueueUrl
+      PROCESS_CONVERSION_FUNCTION:
+        Fn::GetAtt:
+          - ProcessConversionLambdaFunction
+          - Arn
+      BUCKET_NAME:
+        'Fn::ImportValue': AwsXRayS3BucketName
+    tracing:
+      mode: Active
+
+  processConversion:
+    handler: handler.processConversion
+    role: ConversionFunctionsRole
+    environment:
+      FETCH_RATES_FUNCTION:
+        Fn::GetAtt:
+          - FetchRatesLambdaFunction
+          - Arn
+    tracing:
+      mode: Active
+
+  fetchRates:
+    handler: handler.fetchRates
+    role: OrchestratorFunctionIamRole
+    tracing:
+      mode: Active
+
+  persistToS3:
+    handler: handler.persistToS3
+    role: RecevingFunctionIamRole
+    environment:
+    tracing:
+      mode: Active
+
+resources:
+  Resources:
+    ConversionsQueuePolicy:
+      Type: "AWS::IAM::ManagedPolicy"
+      Properties:
+        Description: Access to the conversions queue
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - sqs:SendMessage
+              Resource:
+                Fn::ImportValue: AwsXRayConversionsQueueArn
+
+    RecevingFunctionIamRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            -
+              Effect: "Allow"
+              Principal:
+                Service:
+                  - "lambda.amazonaws.com"
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+          - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+          - Ref: ConversionsQueuePolicy
+
+    OrchestratorPolicy:
+      Type: "AWS::IAM::ManagedPolicy"
+      Properties:
+        Description: Access to the conversions queue
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - sqs:ReceiveMessage
+                - sqs:DeleteMessage
+                - sqs:DeleteMessageBatch
+              Resource:
+                Fn::ImportValue: AwsXRayConversionsQueueArn
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+              Resource:
+                Fn::Join:
+                  - ''
+                  - [ Fn::ImportValue: AwsXRayS3BucketArn, '/*' ]
+#            - Effect: Allow
+#              Action:
+#                - lambda:InvokeFunction
+#              Resource:
+#                - Fn::GetAtt:
+#                  - ProcessConversionLambdaFunction
+#                  - Arn
+
+    OrchestratorInvokePermission:
+      Type: 'AWS::Lambda::Permission'
+      Properties:
+        FunctionName:
+          Fn::GetAtt:
+            - ProcessConversionLambdaFunction
+            - Arn
+        Action: 'lambda:InvokeFunction'
+        Principal:
+          Fn::GetAtt:
+            - OrchestratorFunctionIamRole
+            - Arn
+
+    OrchestratorFunctionIamRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            -
+              Effect: "Allow"
+              Principal:
+                Service:
+                  - "lambda.amazonaws.com"
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+          - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+          - Ref: OrchestratorPolicy
+
+    InvokeConversionFunctionsPolicy:
+      Type: "AWS::IAM::ManagedPolicy"
+      Properties:
+        Description: Invoke conversion functions
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource:
+                - Fn::GetAtt:
+                  - FetchRatesLambdaFunction
+                  - Arn
+
+    ConversionFunctionsRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            -
+              Effect: "Allow"
+              Principal:
+                Service:
+                  - "lambda.amazonaws.com"
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+          - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
+          - Ref: InvokeConversionFunctionsPolicy

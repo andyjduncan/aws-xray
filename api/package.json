@@ -1,0 +1,23 @@
+{
+  "name": "aws-xray-demo",
+  "version": "1.0.0",
+  "description": "AWS X-ray demo api",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Andy Duncan <andy@adjectivecolournoun.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "aws-sdk-mock": "^1.7.0",
+    "chai": "^4.1.2",
+    "mocha": "^4.0.1",
+    "serverless": "^1.25.0",
+    "serverless-aws-alias": "^1.5.1"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.185.0",
+    "aws-xray-sdk": "^1.1.7",
+    "query-string": "^5.0.1"
+  }
+}
